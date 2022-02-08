@@ -2,7 +2,7 @@
 import logging
 
 import pandas as pd
-import psycopg2
+import mysql.connector as mysql
 import requests
 import sys
 import time
@@ -39,7 +39,7 @@ def get_stock_data():
 
 
 def get_db():
-    conn = psycopg2.connect('dbname=stocker user=lester password=password')
+    conn = mysql.connect(host='localhost', user='root', password='', database='stocker')
     return conn
 
 
