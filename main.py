@@ -2,16 +2,19 @@
 import logging
 
 import pandas as pd
-import mysql.connector as mysql
+import psycopg2
 import requests
 import sys
 import time
+import warnings
+
+warnings.filterwarnings('ignore')
 
 from AlmaIndicator import ALMAIndicator
 from bs4 import BeautifulSoup
 from datetime import datetime
 from ta.momentum import RSIIndicator, WilliamsRIndicator, StochasticOscillator
-from ta.trend import SMAIndicator, MACD, CCIIndicator
+from ta.trend import SMAIndicator, MACD, CCIIndicator, TRIXIndicator, PSARIndicator, EMAIndicator
 from ta.volatility import AverageTrueRange
 
 # Press ⌃R to execute it or replace it with your code.
@@ -38,23 +41,24 @@ def get_stock_data():
     sys.exit()
 
 
-def get_db():
-    conn = mysql.connect(host='localhost', user='root', password='', database='stocker')
-    return conn
-
-
-def close_db():
-    conn = get_db()
-    if conn:
-        conn.close()
+class Conn:
+    def __init__(self):
+        self.config = config = {
+            'host': 'localhost',
+            'user': 'lester',
+            'port': 5432,
+            'password': 'password',
+            'database': 'stocker'
+        }
+        self.conn = psycopg2.connect(**self.config)
+        self.cursor = self.conn.cursor()
 
 
 def get_companies():
-    conn = get_db()
-    cur = conn.cursor()
+    conn = Conn()
 
-    cur.execute('select id, symbol from companies where active is TRUE order by id')
-    companies = cur.fetchall()
+    conn.cursor.execute('select id, symbol from companies where active is TRUE order by id')
+    companies = conn.cursor.fetchall()
 
     companies.sort()
 
@@ -102,6 +106,8 @@ def extract_data(slug: str, _id: int):
 
 
 def extract_and_save(row, slug, _id):
+    conn = Conn()
+
     columns = row.find_all('td')
     date = datetime.strptime(columns[0].text, '%b %d, %Y').strftime('%Y-%m-%-d')
     openp = convert_string_to_float(columns[1].text)
@@ -110,50 +116,48 @@ def extract_and_save(row, slug, _id):
     closep = convert_string_to_float(columns[4].text)
     value = convert_string_to_float(columns[7].text)
 
-    # let's re-initialize the cursor
-    conn = get_db()
-    cur = conn.cursor()
-
     # let's skip if the data is already in the table
-    cur.execute('''
+    conn.cursor.execute('''
                 SELECT * FROM historical_prices WHERE date=%s and company_id=%s
                 ''', (date, _id))
-    result = cur.fetchall()
+    result = conn.cursor.fetchall()
 
     if len(result):
         message = 'Record already exists for ' + slug
         logging.info(message)
         print(message)
     else:
-        cur.execute('''
+        conn.cursor.execute('''
                         INSERT INTO historical_prices (company_id, date, open, high, low, close, value)
                         VALUES(%s, %s, %s, %s, %s, %s, %s)
                     ''', (_id, date, openp, highp, lowp, closep, value))
-        conn.commit()
+        conn.conn.commit()
         message = 'Successfully inserted data for ' + slug
 
         # add indicators
-        add_indicators(_id)
+        # add_indicators(_id)
 
         logging.info(message)
         print(message)
 
-    cur.close()
+    add_indicators(_id)
 
 
 def add_indicators(_id):
-    cur = get_db().cursor()
+    conn = Conn()
 
-    cur.execute('''
+    conn.cursor.execute('''
         select date, open, high, low, close from historical_prices
         where company_id=%s
         order by date desc
         limit 200
     ''' % _id)
 
-    stock = pd.DataFrame(cur.fetchall())
+    prices = conn.cursor.fetchall()
 
-    stock.columns = [desc[0] for desc in cur.description]
+    stock = pd.DataFrame(prices)
+
+    stock.columns = [desc[0] for desc in conn.cursor.description]
 
     stock = stock.astype({
         'open': 'float',
@@ -177,14 +181,17 @@ def add_indicators(_id):
     # stock['atr'] = AverageTrueRange(stock.high, stock.low, stock.close).average_true_range()
     stock['sts'] = StochasticOscillator(stock.high, stock.low, stock.close).stoch()
     stock['williams_r'] = WilliamsRIndicator(stock.high, stock.low, stock.close).williams_r()
+    stock['trix'] = TRIXIndicator(stock.close, 7).trix()
+    stock['psar'] = PSARIndicator(stock.high, stock.low, stock.close).psar()
+    stock['ema_9'] = EMAIndicator(stock.close, 9).ema_indicator()
     data_to_insert = stock[-1:].to_records(index=False)[0]
 
-    conn = get_db()
-    cur = conn.cursor()
+    cur = conn.cursor
 
     cur.execute('''
         update historical_prices
-        set alma=%s, macd=%s, macd_signal=%s, macd_hist=%s, ma_20=%s, ma_50=%s, ma_100=%s, ma_200=%s, rsi=%s, cci=%s, sts=%s, williams_r=%s 
+        set alma=%s, macd=%s, macd_signal=%s, macd_hist=%s, ma_20=%s, ma_50=%s, ma_100=%s, ma_200=%s, rsi=%s, cci=%s, 
+        sts=%s, williams_r=%s, trix=%s, psar=%s, ema_9=%s
         where company_id=%s and date=%s
     ''', (
         data_to_insert[5],
@@ -199,14 +206,14 @@ def add_indicators(_id):
         data_to_insert[14],
         data_to_insert[15],
         data_to_insert[16],
+        data_to_insert[17],
+        data_to_insert[18],
+        data_to_insert[19],
         _id,
         data_to_insert[0]
     ))
 
-    conn.commit()
-    cur.close()
-
-    print(data_to_insert)
+    conn.conn.commit()
 
 
 # Press the green button in the gutter to run the script.
