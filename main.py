@@ -13,21 +13,31 @@ warnings.filterwarnings('ignore')
 from AlmaIndicator import ALMAIndicator
 from bs4 import BeautifulSoup
 from datetime import datetime
+from flask import Flask, render_template, request
+
 from ta.momentum import RSIIndicator, WilliamsRIndicator, StochasticOscillator
 from ta.trend import SMAIndicator, MACD, CCIIndicator, TRIXIndicator, PSARIndicator, EMAIndicator
-from ta.volatility import AverageTrueRange
 
 # Press ⌃R to execute it or replace it with your code.
 # Press Double ⇧ to search everywhere for classes, files, tool windows, actions, and settings.
 
+app = Flask(__name__)
+
+
 base_url = 'https://frames.pse.com.ph/security/'
 
-logging.basicConfig(filename="errors.log", level=logging.ERROR)
-logging.basicConfig(
-    format='%(asctime)s %(levelname)-8s %(message)s',
-    level=logging.INFO,
-    datefmt='%Y-%m-%d %H:%M:%S',
-    filename="info.log")
+
+@app.route('/', methods=['get', 'post'])
+def index():
+    if request.method == 'POST':
+        return 'Retrieving stuff'
+
+    return render_template('index.html')
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return render_template('error.html')
 
 
 def get_stock_data():
@@ -184,6 +194,7 @@ def add_indicators(_id):
     stock['trix'] = TRIXIndicator(stock.close, 7).trix()
     stock['psar'] = PSARIndicator(stock.high, stock.low, stock.close).psar()
     stock['ema_9'] = EMAIndicator(stock.close, 9).ema_indicator()
+    stock['pct_change'] = stock.close.pct_change()
     data_to_insert = stock[-1:].to_records(index=False)[0]
 
     cur = conn.cursor
@@ -191,7 +202,7 @@ def add_indicators(_id):
     cur.execute('''
         update historical_prices
         set alma=%s, macd=%s, macd_signal=%s, macd_hist=%s, ma_20=%s, ma_50=%s, ma_100=%s, ma_200=%s, rsi=%s, cci=%s, 
-        sts=%s, williams_r=%s, trix=%s, psar=%s, ema_9=%s
+        sts=%s, williams_r=%s, trix=%s, psar=%s, ema_9=%s, pct_change=%
         where company_id=%s and date=%s
     ''', (
         data_to_insert[5],
@@ -209,6 +220,7 @@ def add_indicators(_id):
         data_to_insert[17],
         data_to_insert[18],
         data_to_insert[19],
+        data_to_insert[20],
         _id,
         data_to_insert[0]
     ))
