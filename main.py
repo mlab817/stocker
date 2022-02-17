@@ -2,7 +2,7 @@
 import logging
 
 import pandas as pd
-import mysql.connector as mysql
+import psycopg2
 import requests
 import sys
 import time
@@ -11,7 +11,7 @@ from AlmaIndicator import ALMAIndicator
 from bs4 import BeautifulSoup
 from datetime import datetime
 from ta.momentum import RSIIndicator, WilliamsRIndicator, StochasticOscillator
-from ta.trend import SMAIndicator, MACD, CCIIndicator
+from ta.trend import SMAIndicator, MACD, CCIIndicator, TRIXIndicator, EMAIndicator, PSARIndicator
 from ta.volatility import AverageTrueRange
 
 # Press ⌃R to execute it or replace it with your code.
@@ -34,12 +34,14 @@ def get_stock_data():
     for company in companies:
         slug = company[1].lower()
         extract_data(slug, company[0])
+        
+    close_db()
 
     sys.exit()
 
 
 def get_db():
-    conn = mysql.connect(host='localhost', user='root', password='', database='stocker')
+    conn = psycopg2.connect('dbname=stocker user=lester password=password')
     return conn
 
 
@@ -177,6 +179,10 @@ def add_indicators(_id):
     # stock['atr'] = AverageTrueRange(stock.high, stock.low, stock.close).average_true_range()
     stock['sts'] = StochasticOscillator(stock.high, stock.low, stock.close).stoch()
     stock['williams_r'] = WilliamsRIndicator(stock.high, stock.low, stock.close).williams_r()
+    stock['trix'] = TRIXIndicator(stock.close, 7, fillna=False).trix()
+    stock['psar'] = PSARIndicator(stock.high, stock.low, stock.close, fillna=False).psar()
+    stock['ema_9'] = EMAIndicator(stock.close, 9, fillna=False).ema_indicator()
+    stock['pct_change'] = stock.close.pct_change()
     data_to_insert = stock[-1:].to_records(index=False)[0]
 
     conn = get_db()
@@ -184,7 +190,7 @@ def add_indicators(_id):
 
     cur.execute('''
         update historical_prices
-        set alma=%s, macd=%s, macd_signal=%s, macd_hist=%s, ma_20=%s, ma_50=%s, ma_100=%s, ma_200=%s, rsi=%s, cci=%s, sts=%s, williams_r=%s 
+        set alma=%s, macd=%s, macd_signal=%s, macd_hist=%s, ma_20=%s, ma_50=%s, ma_100=%s, ma_200=%s, rsi=%s, cci=%s, sts=%s, williams_r=%s, trix=%s, psar=%s, ema_9=%s, pct_change=%s 
         where company_id=%s and date=%s
     ''', (
         data_to_insert[5],
@@ -199,6 +205,10 @@ def add_indicators(_id):
         data_to_insert[14],
         data_to_insert[15],
         data_to_insert[16],
+        data_to_insert[17],
+        data_to_insert[18],
+        data_to_insert[19],
+        data_to_insert[20],
         _id,
         data_to_insert[0]
     ))
