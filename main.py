@@ -34,7 +34,7 @@ def get_stock_data():
     for company in companies:
         slug = company[1].lower()
         extract_data(slug, company[0])
-        
+
     close_db()
 
     sys.exit()
@@ -182,7 +182,7 @@ def add_indicators(_id):
     stock['trix'] = TRIXIndicator(stock.close, 7, fillna=False).trix()
     stock['psar'] = PSARIndicator(stock.high, stock.low, stock.close, fillna=False).psar()
     stock['ema_9'] = EMAIndicator(stock.close, 9, fillna=False).ema_indicator()
-    stock['pct_change'] = stock.close.pct_change()
+    stock['pct_change'] = stock.close.pct_change() * 100
     data_to_insert = stock[-1:].to_records(index=False)[0]
 
     conn = get_db()
